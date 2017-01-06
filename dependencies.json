@@ -19,7 +19,11 @@
       "name": "forecast",
       "displayName": "forecast: Forecasting Functions for Time Series and Linear Models",
       "url": "https://cran.r-project.org/web/packages/forecast/index.html"
+    },
+    {
+      "name": "rjson",
+      "displayName": "rjson: JSON for R",
+      "url": "https://cran.r-project.org/web/packages/rjson/index.html"
     }
-    
   ]
 }
