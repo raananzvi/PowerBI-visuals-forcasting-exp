@@ -49,6 +49,7 @@ module powerbi.extensibility.visual {
     }
     interface VisualAdditionalParams {
         show: boolean;
+        clientSideRender: boolean;
         showWarnings: boolean;
         showInfo: boolean;
         textSize: number;
@@ -56,8 +57,10 @@ module powerbi.extensibility.visual {
 
 
     export class Visual implements IVisual {
+        private rootElement: HTMLElement;
         private imageDiv: HTMLDivElement;
         private imageElement: HTMLImageElement;
+        private svg: d3.Selection<SVGElement>;
 
         private settings_forecastPlot_params: VisualSettingsForecastPlotParams;
         private settings_conf_params: VisualSettingsConfParams;
@@ -65,14 +68,7 @@ module powerbi.extensibility.visual {
         private settings_additional_params: VisualAdditionalParams;
 
         public constructor(options: VisualConstructorOptions) {
-            this.imageDiv = document.createElement('div');
-            this.imageDiv.className = 'rcv_autoScaleImageContainer';
-            options.element.appendChild(this.imageDiv);
-
-            this.imageElement = document.createElement('img');
-            this.imageElement.className = 'rcv_autoScaleImage';
-
-            this.imageDiv.appendChild(this.imageElement);
+            this.rootElement = options.element;
 
             this.settings_forecastPlot_params = <VisualSettingsForecastPlotParams>{
                
@@ -101,6 +97,7 @@ module powerbi.extensibility.visual {
 
             this.settings_additional_params = <VisualAdditionalParams>{
               
+                clientSideRender: false,
                 showWarnings: false,
                 showInfo: true,
                 textSize: 10
@@ -140,20 +137,97 @@ module powerbi.extensibility.visual {
 
             }
             this.settings_additional_params = <VisualAdditionalParams>{
+                clientSideRender: getValue<boolean>(dataView.metadata.objects, 'settings_additional_params', 'clientSideRender', false),
                 showWarnings: getValue<boolean>(dataView.metadata.objects, 'settings_additional_params', 'showWarnings', false),
                 showInfo: getValue<boolean>(dataView.metadata.objects, 'settings_additional_params', 'showInfo', true),
                 textSize: getValue<number>(dataView.metadata.objects, 'settings_additional_params', 'textSize', 10)
             }
 
-            let imageUrl: string = null;
-            if (dataView.scriptResult && dataView.scriptResult.payloadBase64) {
-                imageUrl = "data:image/png;base64," + dataView.scriptResult.payloadBase64;
-            }
+            if (!this.settings_additional_params.clientSideRender) {
+                this.rootElement.innerHTML = "";
 
-            if (imageUrl) {
-                this.imageElement.src = imageUrl;
+                this.imageDiv = document.createElement('div');
+                this.imageDiv.className = 'rcv_autoScaleImageContainer';
+                this.rootElement.appendChild(this.imageDiv);
+
+                this.imageElement = document.createElement('img');
+                this.imageElement.className = 'rcv_autoScaleImage';
+
+                this.imageDiv.appendChild(this.imageElement);
+
+                let imageUrl: string = null;
+                if (dataView.scriptResult && dataView.scriptResult.payloadBase64) {
+                    imageUrl = "data:image/png;base64," + dataView.scriptResult.payloadBase64;
+                }
+
+                if (imageUrl) {
+                    this.imageElement.src = imageUrl;
+                } else {
+                    this.imageElement.src = null;
+                }
             } else {
-                this.imageElement.src = null;
+                let viewModel;
+                if (dataView.scriptResult && dataView.scriptResult.payloadBase64) {
+                    viewModel = JSON.parse(dataView.scriptResult.payloadBase64);
+
+                    viewModel.historical = [];
+                    for (let i = 0; i < viewModel.historicalData.length; ++i) {
+                        viewModel.historical.push({
+                            value: viewModel.historicalData[i],
+                            date: viewModel.historicalSteps[i],
+                            color: this.settings_graph_params.dataCol
+                        });
+                    }
+                    viewModel.historicalData = null;
+                    viewModel.historicalSteps = null;
+
+                    viewModel.forecast = [];
+                    for (let i = 0; i < viewModel.forecastedData.length; ++i) {
+                        viewModel.historical.push({
+                            value: viewModel.forecastedData[i],
+                            date: viewModel.forecastedSteps[i],
+                            color: this.settings_graph_params.forecastCol
+                        });
+                    }
+
+                    viewModel.forecastedData = null;
+                    viewModel.forecastedSteps = null;
+                }
+
+                this.rootElement.innerHTML = "";
+
+                let width = options.viewport.width;
+                let height = options.viewport.height;
+
+                this.svg.attr({
+                    width: width,
+                    height: height
+                });
+
+                var x = d3.time.scale().range([0, width]);
+                var y = d3.scale.linear().range([height, 0]);
+
+                // Define the axes
+                var xAxis = d3.svg.axis().scale(x)
+                    .orient("bottom").ticks(5);
+
+                var yAxis = d3.svg.axis().scale(y)
+                    .orient("left").ticks(5);
+
+                // Define the line
+                var valueline = d3.svg.line()
+                    .x(function(d:any) { return x(d.date); })
+                    .y(function(d:any) { return y(d.value); });
+
+                // Adds the svg canvas
+                let svg = this.svg = d3.select(this.rootElement)
+                    .append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+
+                var g = svg.append("svg:g");
+
+                g.append("svg:path").attr("d", valueline(viewModel.historical));
             }
 
             this.onResizing(options.viewport);
@@ -232,6 +306,7 @@ module powerbi.extensibility.visual {
 
                             objectName: objectName,
                             properties: {
+                                clientSideRender: this.settings_additional_params.clientSideRender,
                                 showWarnings: this.settings_additional_params.showWarnings,
                                 showInfo: this.settings_additional_params.showInfo,
                                 textSize: this.settings_additional_params.textSize
@@ -244,6 +319,7 @@ module powerbi.extensibility.visual {
 
                             objectName: objectName,
                             properties: {
+                                clientSideRender: this.settings_additional_params.clientSideRender,
                                 showWarnings: this.settings_additional_params.showWarnings,
                                 showInfo: this.settings_additional_params.showInfo,
 

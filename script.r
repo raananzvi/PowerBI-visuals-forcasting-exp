@@ -33,6 +33,12 @@ Sys.setlocale("LC_ALL","English")
 ############ User Parameters #########
 
 
+##PBI_PARAM: Should we render the chart in the client side or in R?
+#Type:logical, Default:FALSE, Range:NA, PossibleValues:NA, Remarks: NA
+clientSideRender=FALSE
+if(exists("settings_additional_params_clientSideRender"))
+  clientSideRender = settings_additional_params_clientSideRender
+
 ##PBI_PARAM: Should warnings text be displayed?
 #Type:logical, Default:TRUE, Range:NA, PossibleValues:NA, Remarks: NA
 showWarnings=FALSE
@@ -407,27 +413,80 @@ if(length(timeSeries)>=minPoints) {
     prediction = forecast(fit, level=c(lowerConfInterval,upperConfInterval))
   else
     prediction = forecast(fit, level=c(lowerConfInterval,upperConfInterval), h=forecastLength)
-
+  
+  lastValue = tail(prediction$x,1)
+  
+  prediction$mean=ts(c(lastValue,prediction$mean), 
+                     frequency = frequency(prediction$mean), 
+                     end=end(prediction$mean))
+  
+  prediction$upper=ts(rbind(c(lastValue,lastValue),prediction$upper), 
+                      frequency = frequency(prediction$upper), 
+                      end=end(prediction$upper))
+  
+  prediction$lower=ts(rbind(c(lastValue,lastValue),prediction$lower), 
+                      frequency = frequency(prediction$lower), 
+                      end=end(prediction$lower))
   
   if(showInfo)
     pbiInfo=paste(pbiInfo,"Forecasts from ", fit$method, sep="")
   
   labTime = cutStr2Show(labTime, strCex =1.1, isH = TRUE)
   labValue = cutStr2Show(labValue, strCex =1.1, isH = FALSE)
-  
-  resultData = list(
-    historicalData = Value, 
-    historicalSteps = Date,
-    forecastedData = as.numeric(prediction$mean))
 
-} else{ #empty plot
-  plot.new()
+  if (clientSideRender) {
+    predictionResult = as.numeric(prediction$mean);
+    resultData = list(
+      historicalData = Value[,1], 
+      historicalSteps = Date[,1],
+      forecastedData = predictionResult,
+      forecastedSteps = format(seq(from=parsed_dates[length(parsed_dates)], by=interval, length.out=length(predictionResult)), "%Y-%m-%dT%H:%M:%S"),
+      dataMax = max(c(max(Value), max(predictionResult)))
+      )
+  } else {
+    plot.forecast(prediction, lwd=pointCex, col=alpha(pointsCol,transparency), fcol=alpha(forecastCol,transparency), flwd = pointCex, shaded=fillConfidenceLevels, 
+            main = "", sub = pbiInfo, col.sub = "gray50", cex.sub = cexSub, xlab = labTime, ylab = labValue, xaxt = "n")
+
+    NpF = (length(parsed_dates))+forecastLength
+    freq = frequency(timeSeries)
+    
+    #format  x_with_f
+    numTicks = FindTicksNum(NpF,freq) # find based on plot size
+    
+    x_with_f = as.POSIXlt(seq(from=parsed_dates[1], to = (parsed_dates[1]+interval*(length(parsed_dates)+forecastLength)), length.out = numTicks))
+    x_with_forcast_formatted = flexFormat(dates = x_with_f, orig_dates = parsed_dates, freq = freq)
+    
+    correction = (NpF-1)/(numTicks-1) # needed due to subsampling of ticks
+    axis(1, at = 1+correction*((0:(numTicks-1))/freq), labels = x_with_forcast_formatted)
+  }
+} else{
+  
   showWarnings = TRUE
   pbiWarning<-paste(pbiWarning, "Not enough data points", sep="\n")
 
-  resultData = list(error = pbiWarning)
+  if (clientSideRender) {
+    resultData = list(error = pbiWarning)
+  } else {
+    plot.new()
+  }
 }
 
-sink("outfile.json")
-cat(toJSON(resultData))
-sink()
+if (clientSideRender) {
+  sink("outfile.json")
+  cat(toJSON(resultData))
+  sink()
+
+} else{ 
+  #add warning as subtitle
+  if(showWarnings)
+    title(main=NULL, sub=pbiWarning,outer=FALSE, col.sub = "gray50", cex.sub=cexSub)
+
+  dev.off();
+
+  imageFiles = list.files(pattern = "*.png$")
+  for (i in 1:length(imageFiles))
+  {
+    file.rename(imageFiles[i], paste(imageFiles[i], ".json", sep = ""));
+  }
+}
+

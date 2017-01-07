@@ -34,7 +34,7 @@
         },
         "script": {
           "scriptProviderDefault": "R",
-          "scriptOutputType": "png",
+          "scriptOutputType": "json",
           "source": {
             "objectName": "rcv_script",
             "propertyName": "source"
@@ -261,7 +261,13 @@
      "settings_additional_params":{
         "displayName": "Additional parameters",
         "properties": {
-        
+            "clientSideRender":{
+              "displayName": "Render Chart on Client Side",
+              "description": "Render the chart on client side will allow better integration with Power BI",
+              "type": {
+                "bool": true
+              }
+          },
             "showWarnings":{
             "displayName": "Show warnings",
             "type": {
@@ -277,7 +283,7 @@
           },
            "textSize":{
             "displayName": "Font size",
-			"description": "Font size used to show information",
+			       "description": "Font size used to show information",
             "type": {
               "numeric": true
               }
