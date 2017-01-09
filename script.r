@@ -15,9 +15,9 @@
 #
 # CREATION DATE: 24/7/2016
 #
-# LAST UPDATE: 30/11/2016
+# LAST UPDATE: 08/01/2017
 #
-# VERSION: 0.0.3
+# VERSION: 1.0.2
 #
 # R VERSION TESTED: 3.2.2
 # 
@@ -26,8 +26,11 @@
 # REFERENCES: http://www.exponentialsmoothing.net/
 
 
-
 Sys.setlocale("LC_ALL","English")
+
+#For DEBUG uses:
+# save(list = ls(all.names = TRUE), file='C:/Users/boefraty/projects/PBI/R/tempData.Rda')
+# load(file='C:/Users/boefraty/projects/PBI/R/tempData.Rda')
 
 
 ############ User Parameters #########
@@ -249,7 +252,7 @@ findFreq = function(dates, targetS = "Automatic")
   for( s in rev(nnn)) # check year --> Quater --> etc
     if(freq==1 || round(freq)>24)
       freq = freqSeason(seasons[s],perSeason[s])
-     
+  
   
   if(round(freq)>24) # limit of exp smoothing R implementation
     freq = 1
@@ -281,7 +284,7 @@ flexFormat = function(dates, orig_dates, freq = 1, myformat = NULL)
   constMin = length(unique(orig_dates$min))==1
   constSec = length(unique(orig_dates$sec))==1
   constMon = length(unique(orig_dates$mon))==1
- 
+  
   timeChange = any(!constHour,!constMin,!constSec)
   
   if(is.null(myformat))
@@ -330,39 +333,33 @@ flexFormat = function(dates, orig_dates, freq = 1, myformat = NULL)
 
 
 ###############Upfront input correctness validations (where possible)#################
+
 pbiWarning = NULL
 
-if(exists("Date") && exists("Value"))
+if(!exists("Date") || !exists("Value"))
 {
-  dataset=tryCatch({
-    cbind(Date,Value)
-  },
-  error=function(e) {
-    return(data.frame())
-  }
-  )
-}else{
   dataset=data.frame()
   pbiWarning  = cutStr2Show("Both 'Date' and 'Value' fields are required.", strCex = 0.85)
   timeSeries=ts()
   showWarnings=TRUE
-}
-
-dataset<-dataset[complete.cases(dataset),] #remove corrupted rows
-
-N=nrow(dataset)
-
-labTime = "Time"
-labValue=names(dataset)[ncol(dataset)]
-
-if(N==0 && exists("Date") && nrow(Date)>0 &&  exists("Value")){
-  pbiWarning1  = cutStr2Show("Wrong date type. Only 'Date', 'Time', 'Date/Time' are allowed without hierarchy", strCex = 0.85)
-  pbiWarning = paste(pbiWarning1, pbiWarning, sep ="\n")
-  timeSeries=ts()
-  showWarnings=TRUE
-}else {
+}else{
+  dataset= cbind(Date,Value)
+  dataset<-dataset[complete.cases(dataset),] #remove corrupted rows
+  labTime = "Time"
+  labValue=names(dataset)[ncol(dataset)]
   
-  result = tryCatch({
+  
+  
+  N=nrow(dataset)
+  
+  if(N==0 && exists("Date") && nrow(Date)>0 &&  exists("Value")){
+    pbiWarning1  = cutStr2Show("Wrong date type. Only 'Date', 'Time', 'Date/Time' are allowed without hierarchy", strCex = 0.85)
+    pbiWarning = paste(pbiWarning1, pbiWarning, sep ="\n")
+    timeSeries=ts()
+    showWarnings=TRUE
+  }else {
+    
+    dataset = dataset[order(dataset[,1]),]
     parsed_dates=strptime(dataset[,1],"%Y-%m-%dT%H:%M:%S",tz="UTC")
     labTime = names(Date)[1]
     
@@ -373,30 +370,20 @@ if(N==0 && exists("Date") && nrow(Date)>0 &&  exists("Value")){
       pbiWarning = paste(pbiWarning1, pbiWarning2, pbiWarning, sep ="\n")
       timeSeries=ts()
       showWarnings=TRUE
-      error()
     }
-    
-    interval = difftime(parsed_dates[length(parsed_dates)],parsed_dates[1])/(length(parsed_dates)-1) # force equal spacing 
-    x = as.POSIXlt(seq(from=parsed_dates[1], by=interval, length.out=length(parsed_dates)))
-    
-    myFreq = findFreq(parsed_dates, targetS = targetSeason)
-    
-    timeSeries=ts(data = dataset[,2], start=1, frequency = round(myFreq))
-  
-  }, 
-  warning = function(w) {}, 
-  error = function(e) {
-    pbiWarning = "Wrong dimensionality of dataset."
-    timeSeries=ts()
-    showWarnings=TRUE
-    return(timeSeries)
+    else
+    {
+      
+      interval = difftime(parsed_dates[length(parsed_dates)],parsed_dates[1])/(length(parsed_dates)-1) # force equal spacing 
+      myFreq = findFreq(parsed_dates, targetS = targetSeason)
+      timeSeries=ts(data = dataset[,2], start=1, frequency = round(myFreq))
+    }
   }
-  )
 }
-
 ##############Main Visualization script###########
 
 pbiInfo = NULL
+
 
 if(length(timeSeries)>=minPoints) {
   
@@ -409,6 +396,7 @@ if(length(timeSeries)>=minPoints) {
     deModel = "ZZZ"
   
   fit = ets(timeSeries, model=deModel,damped=damped)
+  
   if (is.null(forecastLength))
     prediction = forecast(fit, level=c(lowerConfInterval,upperConfInterval))
   else
@@ -430,6 +418,7 @@ if(length(timeSeries)>=minPoints) {
   
   if(showInfo)
     pbiInfo=paste(pbiInfo,"Forecasts from ", fit$method, sep="")
+  
   
   labTime = cutStr2Show(labTime, strCex =1.1, isH = TRUE)
   labValue = cutStr2Show(labValue, strCex =1.1, isH = FALSE)
@@ -459,7 +448,7 @@ if(length(timeSeries)>=minPoints) {
     correction = (NpF-1)/(numTicks-1) # needed due to subsampling of ticks
     axis(1, at = 1+correction*((0:(numTicks-1))/freq), labels = x_with_forcast_formatted)
   }
-} else{
+} else{ #empty plot
   
   showWarnings = TRUE
   pbiWarning<-paste(pbiWarning, "Not enough data points", sep="\n")
@@ -483,6 +472,7 @@ if (clientSideRender) {
 
   dev.off();
 
+  # Rename all PNGs to JSON so the images will be sent back to the client
   imageFiles = list.files(pattern = "*.png$")
   for (i in 1:length(imageFiles))
   {
@@ -490,3 +480,4 @@ if (clientSideRender) {
   }
 }
 
+#remove("dataset")

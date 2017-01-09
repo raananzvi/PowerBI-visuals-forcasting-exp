@@ -168,13 +168,14 @@ module powerbi.extensibility.visual {
             } else {
                 let viewModel;
                 if (dataView.scriptResult && dataView.scriptResult.payloadBase64) {
-                    viewModel = JSON.parse(dataView.scriptResult.payloadBase64);
+                    let payloadJson = atob(dataView.scriptResult.payloadBase64);
+                    viewModel = JSON.parse(payloadJson);
 
                     viewModel.historical = [];
                     for (let i = 0; i < viewModel.historicalData.length; ++i) {
                         viewModel.historical.push({
                             value: viewModel.historicalData[i],
-                            date: viewModel.historicalSteps[i],
+                            date: Date.parse(viewModel.historicalSteps[i]),
                             color: this.settings_graph_params.dataCol
                         });
                     }
@@ -185,7 +186,7 @@ module powerbi.extensibility.visual {
                     for (let i = 0; i < viewModel.forecastedData.length; ++i) {
                         viewModel.historical.push({
                             value: viewModel.forecastedData[i],
-                            date: viewModel.forecastedSteps[i],
+                            date: Date.parse(viewModel.forecastedSteps[i]),
                             color: this.settings_graph_params.forecastCol
                         });
                     }
@@ -199,10 +200,7 @@ module powerbi.extensibility.visual {
                 let width = options.viewport.width;
                 let height = options.viewport.height;
 
-                this.svg.attr({
-                    width: width,
-                    height: height
-                });
+                var parseDate = d3.time.format("%d-%b-%y").parse;
 
                 var x = d3.time.scale().range([0, width]);
                 var y = d3.scale.linear().range([height, 0]);
@@ -223,11 +221,30 @@ module powerbi.extensibility.visual {
                 let svg = this.svg = d3.select(this.rootElement)
                     .append("svg")
                         .attr("width", width)
-                        .attr("height", height);
+                        .attr("height", height)
+                        .attr("class", "chartContainer")
+                    .append("g");
 
-                var g = svg.append("svg:g");
+                // Scale the range of the data
+                x.domain(d3.extent(viewModel.historical, function(d:any) { return d.date; }));
+                y.domain([0, d3.max(viewModel.historical, function(d:any) { return d.value; })]);
 
-                g.append("svg:path").attr("d", valueline(viewModel.historical));
+                // Add the valueline path.
+                svg.append("path")
+                    .attr("class", "line")
+                    .attr("d", valueline(viewModel.historical));
+
+                // Add the X Axis
+                svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis);
+
+                // Add the Y Axis
+                svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis);
+
             }
 
             this.onResizing(options.viewport);
