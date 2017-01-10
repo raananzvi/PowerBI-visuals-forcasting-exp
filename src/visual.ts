@@ -66,9 +66,12 @@ module powerbi.extensibility.visual {
         private settings_conf_params: VisualSettingsConfParams;
         private settings_graph_params: VisualGraphParams;
         private settings_additional_params: VisualAdditionalParams;
+        private tooltipServiceWrapper: ITooltipServiceWrapper;
 
         public constructor(options: VisualConstructorOptions) {
             this.rootElement = options.element;
+
+            this.tooltipServiceWrapper = createTooltipServiceWrapper(options.host.tooltipService, options.element);
 
             this.settings_forecastPlot_params = <VisualSettingsForecastPlotParams>{
                
@@ -175,7 +178,7 @@ module powerbi.extensibility.visual {
                     for (let i = 0; i < viewModel.historicalData.length; ++i) {
                         viewModel.historical.push({
                             value: viewModel.historicalData[i],
-                            date: Date.parse(viewModel.historicalSteps[i]),
+                            date: new Date(Date.parse(viewModel.historicalSteps[i])),
                             color: this.settings_graph_params.dataCol
                         });
                     }
@@ -184,23 +187,23 @@ module powerbi.extensibility.visual {
 
                     viewModel.forecast = [];
                     for (let i = 0; i < viewModel.forecastedData.length; ++i) {
-                        viewModel.historical.push({
+                        viewModel.forecast.push({
                             value: viewModel.forecastedData[i],
-                            date: Date.parse(viewModel.forecastedSteps[i]),
+                            date: new Date(Date.parse(viewModel.forecastedSteps[i])),
                             color: this.settings_graph_params.forecastCol
                         });
                     }
 
                     viewModel.forecastedData = null;
                     viewModel.forecastedSteps = null;
+
+                    viewModel.allData = viewModel.historical.concat(viewModel.forecast);
                 }
 
                 this.rootElement.innerHTML = "";
 
                 let width = options.viewport.width;
                 let height = options.viewport.height;
-
-                var parseDate = d3.time.format("%d-%b-%y").parse;
 
                 var x = d3.time.scale().range([0, width]);
                 var y = d3.scale.linear().range([height, 0]);
@@ -226,13 +229,33 @@ module powerbi.extensibility.visual {
                     .append("g");
 
                 // Scale the range of the data
-                x.domain(d3.extent(viewModel.historical, function(d:any) { return d.date; }));
-                y.domain([0, d3.max(viewModel.historical, function(d:any) { return d.value; })]);
+                x.domain(d3.extent(viewModel.allData, function(d:any) { return d.date; }));
+                y.domain([0, d3.max(viewModel.allData, function(d:any) { return d.value; })]);
 
                 // Add the valueline path.
                 svg.append("path")
                     .attr("class", "line")
-                    .attr("d", valueline(viewModel.historical));
+                    .attr("d", valueline(viewModel.historical))
+                    .attr('stroke', this.settings_graph_params.dataCol);
+
+                // Add the valueline path.
+                svg.append("path")
+                    .attr("class", "line")
+                    .attr("d", valueline(viewModel.forecast))
+                    .attr('stroke', this.settings_graph_params.forecastCol);
+
+                // Add the scatterplot
+                let dots = svg.selectAll("dot")	
+                    .data(viewModel.allData)			
+                    .enter().append("circle")								
+                    .attr("r", 2)		
+                    .attr("cx", function(d:any) { return x(d.date); })		 
+                    .attr("cy", function(d:any) { return y(d.value); })
+                    .attr("fill", function (d:any) { return d.color; });
+
+                this.tooltipServiceWrapper.addTooltip(this.svg.selectAll('circle'), 
+                    (tooltipEvent: TooltipEventArgs<number>) => Visual.getTooltipData(tooltipEvent.data),
+                    (tooltipEvent: TooltipEventArgs<number>) => null);
 
                 // Add the X Axis
                 svg.append("g")
@@ -248,6 +271,19 @@ module powerbi.extensibility.visual {
             }
 
             this.onResizing(options.viewport);
+        }
+
+        private static getTooltipData(value: any): VisualTooltipDataItem[] {
+            return [
+                {
+                    displayName: "Data",
+                    value: value.value.toString(),
+                },
+                {
+                    displayName: "Date",
+                    value: value.date
+                }
+                ];
         }
 
         public onResizing(finalViewport: IViewport): void {
